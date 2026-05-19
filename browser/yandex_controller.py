@@ -190,30 +190,18 @@ class YandexBrowserController:
                     'message': 'Яндекс Браузер уже запущен, переключаю фокус на окно.',
                 }
 
-            # Window activation failed — fall through to re-launch
-            logger.warning("Process is running but window activation failed, will try to reconnect")
-
-        # Step 2: Try to connect to an already-running browser via CDP
-        try:
-            options = Options()
-            options.add_experimental_option("debuggerAddress", f"localhost:{self.debug_port}")
-
-            self.driver = webdriver.Chrome(options=options)
-            logger.info("Connected to existing Yandex Browser via CDP")
-
-            # Try to focus the window even after CDP connection
-            self.focus_browser_window()
-
+            # Window activation failed — process is running but we couldn't find/activate the window
+            logger.warning(
+                "Process is running but window activation failed. "
+                "Skipping CDP reconnect to avoid launching a duplicate instance."
+            )
             return {
                 'success': True,
                 'action': 'focused',
-                'message': 'Яндекс Браузер уже запущен, подключился и переключил фокус.',
+                'message': 'Яндекс Браузер уже запущен, но не удалось переключить фокус на окно.',
             }
 
-        except Exception as e:
-            logger.info(f"Could not connect via CDP ({e}), starting new browser instance")
-
-        # Step 3: Start a fresh browser instance
+        # Step 2: Browser is not running — start a fresh instance
         try:
             await self._start_browser()
 
