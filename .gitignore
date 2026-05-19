@@ -1,0 +1,43 @@
+# ============================================
+# Andromeda Voice Assistant - Git Ignore
+# ============================================
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+
+# --- Virtual Environment ---
+.venv/
+venv/
+ENV/
+env/
+
+# --- IDE ---
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Project Specific ---
+logs/
+*.log
+data/
+cache/
+data/tts_model.pt
+dev.env
+
+# --- Secrets ---
+*.env
+!.env.example
