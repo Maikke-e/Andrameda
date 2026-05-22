@@ -23,6 +23,15 @@ class VoiceProcessor:
         self.model = None
         self._load_model()
     
+    def create_stream_recognizer(self, sample_rate: int = 16000):
+        """Create a streaming recognizer for microphone input"""
+        if not self.model:
+            logger.error("Cannot create stream recognizer: model not loaded")
+            return None
+        rec = vosk.KaldiRecognizer(self.model, sample_rate)
+        rec.SetWords(True)
+        return rec
+    
     def _load_model(self):
         """Load Vosk model"""
         try:

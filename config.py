@@ -67,6 +67,16 @@ BROWSER_DEBUG_PORT = int(os.getenv('BROWSER_DEBUG_PORT', '9222'))
 YANDEX_BROWSER_PATH = os.getenv('YANDEX_BROWSER_PATH', r'C:\Program Files\Yandex\YandexBrowser\Application\browser.exe')
 YANDEX_BROWSER_LNK_PATH = os.getenv('YANDEX_BROWSER_LNK_PATH', r'C:\Andromeda\bin\Яндекс Браузер с Алисой AI.lnk')
 
+# --- Local Voice Settings ---
+LOCAL_VOICE_ENABLED = os.getenv('LOCAL_VOICE_ENABLED', 'true').lower() == 'true'
+LOCAL_VOICE_DEVICE_INDEX = int(os.getenv('LOCAL_VOICE_DEVICE_INDEX', '-1'))  # -1 = default mic
+WAKE_WORD_SENSITIVITY = float(os.getenv('WAKE_WORD_SENSITIVITY', '0.5'))
+SILENCE_THRESHOLD = int(os.getenv('SILENCE_THRESHOLD', '500'))  # RMS threshold
+SILENCE_DURATION = float(os.getenv('SILENCE_DURATION', '1.5'))  # seconds of silence = end of phrase
+ACTIVATION_SOUND = os.getenv('ACTIVATION_SOUND', 'true').lower() == 'true'
+MIC_SAMPLE_RATE = int(os.getenv('MIC_SAMPLE_RATE', '16000'))
+MIC_CHUNK_SIZE = int(os.getenv('MIC_CHUNK_SIZE', '4000'))
+
 # --- Window Management ---
 WINDOW_SNAP_DELAY = 0.5
 
