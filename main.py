@@ -19,7 +19,7 @@ elif hasattr(sys.stdout, 'reconfigure'):
 else:
     os.environ['PYTHONIOENCODING'] = 'utf-8'
 
-from config import LOG_LEVEL, LOG_FILE, VA_NAME, VA_VER
+from config import LOG_LEVEL, LOG_FILE, VA_NAME, VA_VER, LOCAL_VOICE_ENABLED
 from core.telegram_bot import AndromedaTelegramBot
 
 def setup_logging():
@@ -44,6 +44,7 @@ class AndromedaApp:
     
     def __init__(self):
         self.telegram_bot: AndromedaTelegramBot = None
+        self.voice_listener = None
         self.running = False
         
         # Setup signal handlers
@@ -67,6 +68,14 @@ class AndromedaApp:
         self.running = True
         
         try:
+            # Initialize Local Voice Listener
+            if LOCAL_VOICE_ENABLED:
+                logger.info("Initializing Local Voice Listener...")
+                from core.local_voice_listener import LocalVoiceListener
+                self.voice_listener = LocalVoiceListener()
+                self.voice_listener.start()
+                logger.info("Local Voice Listener started")
+
             # Initialize Telegram Bot
             logger.info("Initializing Telegram Bot...")
             self.telegram_bot = AndromedaTelegramBot()
@@ -81,6 +90,11 @@ class AndromedaApp:
     async def stop(self):
         """Stop Andromeda"""
         logging.info("Stopping Andromeda...")
+        
+        if self.voice_listener:
+            logging.info("Stopping Local Voice Listener...")
+            self.voice_listener.stop()
+            self.voice_listener = None
         
         if self.telegram_bot:
             # Cleanup
