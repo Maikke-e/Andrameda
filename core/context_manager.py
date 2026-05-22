@@ -4,6 +4,7 @@
 
 import json
 import logging
+from pathlib import Path
 from typing import Dict, List, Optional, Any
 from datetime import datetime, timedelta
 from dataclasses import dataclass, asdict
@@ -17,20 +18,20 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class ContextEntry:
-    """Single context entry"""
-    command: str
+    """Single context entry with role support"""
+    role: str  # 'user' or 'assistant'
+    content: str  # The actual message content
     timestamp: datetime
-    response: str = ""
     emotion: str = "neutral"
-    location: str = "home"  # Could be extended with actual location
+    location: str = "home"
     action_type: str = ""
     success: bool = True
     
     def to_dict(self) -> Dict:
         return {
-            'command': self.command,
+            'role': self.role,
+            'content': self.content,
             'timestamp': self.timestamp.isoformat(),
-            'response': self.response,
             'emotion': self.emotion,
             'location': self.location,
             'action_type': self.action_type,
@@ -40,9 +41,9 @@ class ContextEntry:
     @classmethod
     def from_dict(cls, data: Dict) -> 'ContextEntry':
         return cls(
-            command=data.get('command', ''),
+            role=data.get('role', 'user'),
+            content=data.get('content', ''),
             timestamp=datetime.fromisoformat(data['timestamp']),
-            response=data.get('response', ''),
             emotion=data.get('emotion', 'neutral'),
             location=data.get('location', 'home'),
             action_type=data.get('action_type', ''),
@@ -100,15 +101,15 @@ class ContextManager:
         
         logger.info(f"ContextManager initialized (max_commands={self.max_commands})")
     
-    def add_command(self, user_id: int, command: str, 
+    def add_command(self, user_id: int, command: str,
                    response: str = "", emotion: str = "neutral",
                    action_type: str = "", success: bool = True):
-        """Add command to user's context"""
+        """Add user command to context"""
         with self.lock:
             entry = ContextEntry(
-                command=command,
+                role='user',
+                content=command,
                 timestamp=datetime.now(),
-                response=response,
                 emotion=emotion,
                 action_type=action_type,
                 success=success
@@ -116,14 +117,55 @@ class ContextManager:
             
             self.contexts[user_id].append(entry)
             
-            # Keep only last N commands
+            # Keep only last N entries
             if len(self.contexts[user_id]) > self.max_commands:
                 self.contexts[user_id] = self.contexts[user_id][-self.max_commands:]
             
             # Update multimodal context
             self._update_multimodal_context(user_id, command)
             
-            logger.debug(f"Added command to context for user {user_id}: {command}")
+            logger.debug(f"Added user command to context for user {user_id}: {command}")
+
+    def add_assistant_response(self, user_id: int, response: str,
+                               emotion: str = "neutral",
+                               action_type: str = ""):
+        """Add assistant response to context"""
+        with self.lock:
+            entry = ContextEntry(
+                role='assistant',
+                content=response,
+                timestamp=datetime.now(),
+                emotion=emotion,
+                action_type=action_type
+            )
+            
+            self.contexts[user_id].append(entry)
+            
+            # Keep only last N entries
+            if len(self.contexts[user_id]) > self.max_commands:
+                self.contexts[user_id] = self.contexts[user_id][-self.max_commands:]
+            
+            logger.debug(f"Added assistant response to context for user {user_id}")
+
+    def get_conversation_history(self, user_id: int,
+                                  max_entries: int = None) -> List[Dict]:
+        """
+        Get conversation history in LLM-friendly format
+        Returns list of {'role': 'user'|'assistant', 'content': str}
+        """
+        with self.lock:
+            if user_id not in self.contexts:
+                return []
+            
+            entries = self.contexts[user_id]
+            
+            if max_entries:
+                entries = entries[-max_entries:]
+            
+            return [
+                {'role': entry.role, 'content': entry.content}
+                for entry in entries
+            ]
     
     def _update_multimodal_context(self, user_id: int, command: str):
         """Update multimodal context for user"""
@@ -140,17 +182,18 @@ class ContextManager:
         else:
             time_of_day = 'night'
         
-        # Get previous actions
+        # Get previous actions (only user commands)
         previous_actions = []
         if user_id in self.contexts:
             previous_actions = [
-                e.command for e in self.contexts[user_id][-3:]
-            ]
+                e.content for e in self.contexts[user_id]
+                if e.role == 'user'
+            ][-3:]
         
         # Update command frequency
         command_freq = defaultdict(int)
         if user_id in self.multimodal_contexts:
-            command_freq = defaultdict(int, 
+            command_freq = defaultdict(int,
                 self.multimodal_contexts[user_id].command_frequency)
         
         # Categorize command
@@ -203,7 +246,7 @@ class ContextManager:
         return max(emotion_counts, key=emotion_counts.get) if emotion_counts else "neutral"
     
     def get_context(self, user_id: int, include_expired: bool = False) -> List[Dict]:
-        """Get user's command context"""
+        """Get user's conversation context (backward compatible)"""
         with self.lock:
             if user_id not in self.contexts:
                 return []
@@ -216,9 +259,10 @@ class ContextManager:
                 # Check if entry is still valid
                 if include_expired or (now - entry.timestamp) <= ttl_delta:
                     valid_entries.append({
-                        'command': entry.command,
+                        'role': entry.role,
+                        'command': entry.content if entry.role == 'user' else '',
+                        'response': entry.content if entry.role == 'assistant' else '',
                         'timestamp': entry.timestamp.strftime('%H:%M:%S'),
-                        'response': entry.response,
                         'emotion': entry.emotion,
                         'action_type': entry.action_type
                     })

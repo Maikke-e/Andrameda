@@ -55,9 +55,16 @@ class CommandRouter:
             # System commands
             'system_status': self._handle_system_status,
             'system_volume': self._handle_system_volume,
+            
+            # File commands
+            'file_create': self._handle_file_create,
+            'file_edit': self._handle_file_edit,
+            'file_delete': self._handle_file_delete,
+            'file_write': self._handle_file_write,
         }
     
-    async def route(self, text: str, context: List[Dict], user_id: int) -> Tuple[str, str]:
+    async def route(self, text: str, context: List[Dict], user_id: int,
+                    reminder_system=None) -> Tuple[str, str]:
         """
         Route command to appropriate handler
         Returns: (response_text, action_type)
@@ -72,11 +79,14 @@ class CommandRouter:
                 # Lazy import to avoid circular dependencies
                 from browser.yandex_controller import YandexBrowserController
                 from windows.window_manager import WindowManager
-                from reminders.reminder_system import ReminderSystem
                 
                 browser = YandexBrowserController()
                 window_manager = WindowManager()
-                reminder_system = ReminderSystem()
+                
+                # Use provided reminder_system or create new one (without callback)
+                if reminder_system is None:
+                    from reminders.reminder_system import ReminderSystem
+                    reminder_system = ReminderSystem()
                 
                 handler = self.handlers[command_type]
                 response = await handler(params, browser, window_manager, reminder_system, user_id)
@@ -85,8 +95,8 @@ class CommandRouter:
                 logger.error(f"Handler error: {e}")
                 return f"❌ Ошибка выполнения: {e}", 'error'
         
-        # Use LLM for general conversation
-        return await self._handle_conversation(text, context, user_id)
+        # Use LLM for general conversation with full context
+        return await self._handle_conversation(text, context, user_id, reminder_system)
     
     def _parse_command(self, text: str) -> Tuple[Optional[str], Dict]:
         """Parse command text to determine command type and parameters"""
@@ -118,6 +128,12 @@ class CommandRouter:
             # System patterns
             'system_status': r'(статус|состояние|как дела)',
             'system_volume': r'(громкость|звук)\s+(\d+|вкл|выкл|больше|меньше)',
+            
+            # File patterns
+            'file_create': r'(создай|создать)\s+(файл|текстовый документ)\s+(.+)',
+            'file_edit': r'(отредактируй|измени|обнови)\s+(файл|текстовый документ)\s+(.+)',
+            'file_delete': r'(удали|удалить)\s+(файл|текстовый документ)\s+(.+)',
+            'file_write': r'(запиши|добавь|напиши)\s+(в\s+)?(файл|текстовый документ)\s+(.+?)\s+(с текстом\s+)?(.+)',
         }
         
         for command_type, pattern in patterns.items():
@@ -128,15 +144,18 @@ class CommandRouter:
         
         return None, {}
     
-    async def _handle_conversation(self, text: str, context: List[Dict], user_id: int) -> Tuple[str, str]:
-        """Handle general conversation with LLM"""
+    async def _handle_conversation(self, text: str, context: List[Dict],
+                                    user_id: int, reminder_system=None) -> Tuple[str, str]:
+        """Handle general conversation with LLM using full conversation history"""
         try:
-            # Build context for LLM
-            context_text = ""
-            if context:
-                context_text = "Предыдущие команды пользователя:\n"
-                for item in context[-5:]:
-                    context_text += f"- {item['command']}\n"
+            # Lazy import to avoid circular dependencies
+            from core.context_manager import ContextManager
+            context_manager = ContextManager()
+            
+            # Get full conversation history in LLM-friendly format
+            conversation_history = context_manager.get_conversation_history(
+                user_id, max_entries=20
+            )
             
             # Get current time for context
             current_time = datetime.now().strftime("%H:%M")
@@ -149,20 +168,29 @@ class CommandRouter:
 
 Ты можешь:
 - Управлять браузером Яндекс (открывать, закрывать вкладки, читать новости)
-- Управлять окнами (переключать, сворачивать, разворачивать, располагать)
+- Управлять окнами (переключать, сворачивать, разворачивать, расположать)
 - Ставить напоминания, таймеры и будильники
+- Работать с текстовыми файлами на рабочем столе (создавать, редактировать, удалять)
 - Поддерживать разговор и отвечать на вопросы
 
-{context_text}
+ВАЖНО: У тебя есть доступ к полной истории диалога с пользователем. Используй её для понимания контекста.
+Если пользователь отвечает коротко (да, нет, хорошо, ок, конечно) — это ответ на твой предыдущий вопрос или предложение.
+Если пользователь просит продолжить что-то — вспомни, о чём шла речь ранее.
 
 Отвечай кратко (1-3 предложения), по-человечески, с эмодзи. Если пользователь просит что-то сделать, что ты не умеешь — предложи альтернативу или объясни, что можешь сделать."""
 
+            # Build messages for LLM with full conversation history
+            messages = [{"role": "system", "content": system_prompt}]
+            
+            # Add conversation history
+            messages.extend(conversation_history)
+            
+            # Add current user message
+            messages.append({"role": "user", "content": text})
+            
             response = await self.groq.chat.completions.create(
                 model=GROQ_MODEL,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": text}
-                ],
+                messages=messages,
                 temperature=GROQ_TEMPERATURE,
                 max_tokens=GROQ_MAX_TOKENS
             )
@@ -421,3 +449,69 @@ class CommandRouter:
         except Exception as e:
             logger.error(f"Volume control error: {e}")
             return f"❌ Ошибка управления громкостью: {e}"
+    
+    # ============== File Handlers ==============
+      
+    async def _handle_file_create(self, params, browser, wm, rs, user_id):
+        """Handler for creating a text file on desktop"""
+        from utils.desktop_file_manager import create_desktop_file, FileAction
+        
+        filename = params['groups'][-1] if params['groups'] else 'новый_файл'
+        
+        result = create_desktop_file(filename)
+        
+        if result['success']:
+            return f"[OK] {result['message']}"
+        return f"[ERR] {result['message']}"
+    
+    async def _handle_file_edit(self, params, browser, wm, rs, user_id):
+        """Handler for editing a text file on desktop"""
+        from utils.desktop_file_manager import edit_desktop_file
+        
+        filename = params['groups'][-1] if params['groups'] else ''
+        
+        if not filename:
+            return "[ERR] Укажите имя файла для редактирования"
+        
+        result = edit_desktop_file(filename)
+        
+        if result['success']:
+            return f"[OK] {result['message']}"
+        return f"[ERR] {result['message']}"
+    
+    async def _handle_file_delete(self, params, browser, wm, rs, user_id):
+        """Handler for deleting a text file from desktop"""
+        from utils.desktop_file_manager import delete_desktop_file
+        
+        filename = params['groups'][-1] if params['groups'] else ''
+        
+        if not filename:
+            return "[ERR] Укажите имя файла для удаления"
+        
+        result = delete_desktop_file(filename)
+        
+        if result['success']:
+            return f"[OK] {result['message']}"
+        return f"[ERR] {result['message']}"
+    
+    async def _handle_file_write(self, params, browser, wm, rs, user_id):
+        """Handler for writing text to a file on desktop"""
+        from utils.desktop_file_manager import manage_desktop_file, FileAction
+        
+        groups = params.get('groups', [])
+        # groups: (запиши/добавь/напиши, в/пусто, файл/текстовый документ, имя_файла, None, текст)
+        filename = groups[3] if len(groups) > 3 else ''
+        content = groups[5] if len(groups) > 5 else ''
+        
+        if not filename:
+            return "[ERR] Укажите имя файла"
+        
+        if not content:
+            return "[ERR] Укажите текст для записи"
+        
+        # Создаём файл с содержимым сразу
+        result = manage_desktop_file(filename, content, FileAction.CREATE)
+        
+        if result['success']:
+            return f"[OK] Текст записан в файл: {filename}.txt"
+        return f"[ERR] {result['message']}"

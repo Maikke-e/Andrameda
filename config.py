@@ -61,10 +61,6 @@ TTS_STREAMING_CHUNK_SIZE = 1024
 CONTEXT_MAX_COMMANDS = int(os.getenv('CONTEXT_MAX_COMMANDS', '10'))
 CONTEXT_TTL = int(os.getenv('CONTEXT_TTL', '30'))  # minutes
 
-# --- Emotion Settings ---
-EMOTION_DETECTION_ENABLED = os.getenv('EMOTION_DETECTION_ENABLED', 'true').lower() == 'true'
-EMOTION_MEMORY_FILE = DATA_DIR / 'emotion_memory.json'
-
 # --- Browser Settings ---
 BROWSER_TYPE = os.getenv('BROWSER_TYPE', 'yandex')
 BROWSER_DEBUG_PORT = int(os.getenv('BROWSER_DEBUG_PORT', '9222'))

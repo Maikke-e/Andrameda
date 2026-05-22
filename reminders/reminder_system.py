@@ -20,6 +20,16 @@ from config import DATA_DIR
 logger = logging.getLogger(__name__)
 
 
+def run_async_from_thread(coro, loop=None):
+    """Run async coroutine from a sync thread safely"""
+    if loop is None:
+        loop = asyncio.get_event_loop()
+    if loop.is_running():
+        asyncio.run_coroutine_threadsafe(coro, loop)
+    else:
+        loop.run_until_complete(coro)
+
+
 @dataclass
 class Reminder:
     """Reminder/Timers/Alarm data"""
@@ -81,9 +91,10 @@ class ReminderSystem:
     - Notification callbacks
     """
     
-    def __init__(self, notification_callback: Callable = None):
+    def __init__(self, notification_callback: Callable = None, event_loop: asyncio.AbstractEventLoop = None):
         self.reminders: Dict[str, Reminder] = {}
         self.notification_callback = notification_callback
+        self.event_loop = event_loop
         self.lock = threading.Lock()
         self.running = False
         self.check_thread = None
@@ -163,15 +174,11 @@ class ReminderSystem:
         # Send notification
         if self.notification_callback:
             try:
-                asyncio.create_task(
-                    self.notification_callback(reminder.user_id, reminder.message)
-                )
-            except:
-                # If not in async context, try sync
-                try:
-                    self.notification_callback(reminder.user_id, reminder.message)
-                except Exception as e:
-                    logger.error(f"Notification error: {e}")
+                # Use run_async_from_thread for thread-safe async call
+                coro = self.notification_callback(reminder.user_id, reminder.message)
+                run_async_from_thread(coro, self.event_loop)
+            except Exception as e:
+                logger.error(f"Notification error: {e}")
         
         # Handle repeat
         if reminder.repeat == 'once' or reminder.repeat == 'none':

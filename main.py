@@ -61,7 +61,7 @@ class AndromedaApp:
         logger = logging.getLogger(__name__)
         
         logger.info(f"╔══════════════════════════════════════════╗")
-        logger.info(f"║     {VA_NAME} v{VA_VER} Starting...          ║")
+        logger.info(f"║     {VA_NAME} v{VA_VER} Starting...      ║")
         logger.info(f"╚══════════════════════════════════════════╝")
         
         self.running = True

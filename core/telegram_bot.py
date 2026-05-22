@@ -253,6 +253,7 @@ class AndromedaTelegramBot:
                 f"• Управлять браузером Яндекс\n"
                 f"• Управлять окнами\n"
                 f"• Ставить напоминания и таймеры\n"
+                f"• Работать с файлами на рабочем столе\n"
                 f"• Понимать контекст разговора"
             )
         
@@ -290,7 +291,13 @@ class AndromedaTelegramBot:
                 "• <code>/status</code> - статус системы\n"
                 "• <code>/screenshot</code> - скриншот экрана\n"
                 "• <code>/context</code> - показать контекст\n"
-                "• <code>/timing</code> - анализ времени ответа"
+                "• <code>/timing</code> - анализ времени ответа\n\n"
+                
+                "<b>📄 Файлы:</b>\n"
+                "• <code>создай файл [имя]</code> - создать текстовый файл\n"
+                "• <code>запиши в файл [имя] текст [содержимое]</code> - записать текст в файл\n"
+                "• <code>отредактируй файл [имя]</code> - открыть файл для редактирования\n"
+                "• <code>удали файл [имя]</code> - удалить файл с рабочего стола"
             )
             await message.answer(help_text)
         
@@ -470,7 +477,7 @@ class AndromedaTelegramBot:
         """Process user command"""
         user_id = message.from_user.id
         
-        # Add to context
+        # Add user command to context
         self.context_manager.add_command(user_id, text)
         
         # Get context for processing
@@ -480,13 +487,21 @@ class AndromedaTelegramBot:
         response, action_type = await self.command_router.route(
             text=text,
             context=context,
-            user_id=user_id
+            user_id=user_id,
+            reminder_system=self.reminder_system
         )
         
         self.timing_analyzer.record_llm(user_id)
         
         # Send text response
         await message.answer(response)
+        
+        # Add assistant response to context
+        self.context_manager.add_assistant_response(
+            user_id=user_id,
+            response=response,
+            action_type=action_type
+        )
         
         # Generate and send voice response if needed
         if is_voice or action_type in ['tts_required', 'voice_response']:
@@ -509,6 +524,9 @@ class AndromedaTelegramBot:
     
     async def start(self):
         """Start the bot"""
+        # Set the event loop for reminder system
+        self.reminder_system.event_loop = asyncio.get_running_loop()
+        
         logger.info(f"Starting {VA_NAME} Telegram Bot...")
         await self.dp.start_polling(self.bot)
 
